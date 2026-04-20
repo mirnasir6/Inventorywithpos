@@ -12,25 +12,19 @@
         .invoice-card { transition: all 0.3s ease; }
     </style>
 </head>
-<body class="bg-gray-50 font-sans p-4 md:p-8">
+<body class="bg-gray-50 font-sans p-4 md:p-8" style="zoom: 80%;">
 
-<div class="max-w-5xl mx-auto">
-    <div class="bg-blue-50 border border-blue-200 p-4 rounded-lg mb-6 flex items-center justify-between">
-        <div>
-            <p class="text-xs font-bold text-blue-800 uppercase">Test Mode Active</p>
-            <p class="text-sm text-blue-600">Simulate login to test auto-store selection logic</p>
-        </div>
-        <select id="mockLoginUser" onchange="simulateLogin()" class="border border-blue-300 rounded p-2 text-sm font-bold bg-white outline-none focus:ring-2 focus:ring-blue-400">
-            <option value="admin">Login as: Admin</option>
-            <option value="dhanmondi">Login as: Dhanmondi User</option>
-            <option value="banani">Login as: Banani User</option>
-            <option value="uttara">Login as: Uttara User</option>
-        </select>
-    </div>
-
-    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
+<div class="w-full mx-auto">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6 mt-4">
         <div class="flex justify-between items-center mb-6 border-b pb-4">
             <h2 class="text-xl font-bold text-gray-800"><i class="fa-solid fa-rotate mr-2 text-blue-500"></i> POS to Web Sync</h2>
+            
+            <select id="mockLoginUser" onchange="simulateLogin()" class="border border-blue-300 rounded p-2 text-sm font-bold bg-white outline-none focus:ring-2 focus:ring-blue-400">
+                <option value="admin">Login as: Admin</option>
+                <option value="dhanmondi">Login as: Dhanmondi User</option>
+                <option value="banani">Login as: Banani User</option>
+                <option value="uttara">Login as: Uttara User</option>
+            </select>
         </div>
         
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
@@ -68,14 +62,18 @@
     <div id="posInvoiceContainer" class="grid grid-cols-1 gap-4 pb-20"></div>
 </div>
 
-<div id="posProductModal" class="fixed inset-0 z-50 bg-black bg-opacity-50 hidden flex items-center justify-center p-4">
-    <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
-        <div class="p-4 border-b flex justify-between items-center bg-gray-50">
-            <h3 class="font-bold text-lg text-gray-800">Products for SKU: <span id="posModalSkuTitle" class="text-blue-600"></span></h3>
-            <button onclick="closePosModal()" class="text-gray-400 hover:text-red-500"><i class="fa-solid fa-xmark fa-lg"></i></button>
+<div id="posProductModal" class="fixed inset-0 z-50 bg-gray-50 hidden flex flex-col w-full h-full overflow-hidden">
+    <div class="p-4 md:p-6 border-b flex justify-between items-center bg-white shadow-sm z-10">
+        <div>
+            <h3 class="font-bold text-2xl text-gray-800">Products for SKU: <span id="posModalSkuTitle" class="text-blue-600"></span></h3>
+            <p class="text-sm text-gray-500 mt-1">Select the correct variant to update stock</p>
         </div>
-        <div id="posModalProducts" class="p-4 overflow-y-auto grid grid-cols-2 md:grid-cols-4 gap-4 bg-gray-100"></div>
+        <button onclick="closePosModal()" class="bg-red-50 hover:bg-red-100 text-red-600 font-bold px-6 py-3 rounded-xl transition-colors flex items-center shadow-sm">
+            <i class="fa-solid fa-arrow-left mr-2"></i> Back
+        </button>
     </div>
+    
+    <div id="posModalProducts" class="p-4 md:p-8 overflow-y-auto grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 md:gap-6 bg-gray-50 flex-1 content-start"></div>
 </div>
 
 <div id="imagePreviewModal" class="fixed inset-0 z-[100] bg-black bg-opacity-90 hidden flex items-center justify-center p-4 backdrop-blur-sm transition-opacity opacity-0" onclick="closeImagePreview(event)">
@@ -89,7 +87,9 @@
 </div>
 
 <script>
-    const API_URL = "http://localhost:3000/api";
+    // ⚠️ লাইভ Render সার্ভারের লিংক বসানো হয়েছে ⚠️
+    const API_URL = "https://pos-sync-app-backend.onrender.com/api";
+    
     let currentUser = 'admin'; 
     let posSyncedMemory = [];
     let posActiveInvoice = null;
@@ -152,21 +152,25 @@
                     const invId = `invoice-${index}`;
                     
                     let skuRows = item.barcodes.map((sku, skuIndex) => {
-                        // POS থেকে আসা ইনভয়েসের সামনের 0 মুছে ফেলা হচ্ছে
                         const posInv = String(item.invoiceNo).replace(/^0+/, '');
                         const uniqueKey = `${posInv}_${sku}`;
-                        const isSynced = posSyncedMemory.includes(uniqueKey);
                         
-                        if (isSynced) {
-                            // Render as Updated (Green) immediately if found in Sheet memory
+                        // Backend theke asha object theke data check kora hocche
+                        const syncStatus = posSyncedMemory[uniqueKey]; 
+                        
+                        if (syncStatus) {
+                            // Jodi sheet e "(Auto Updated)" lekha thake
+                            const isAuto = syncStatus.includes('Auto Updated');
+                            const statusText = isAuto ? 'Auto Updated' : 'Updated';
+                            const iconType = isAuto ? 'fa-robot' : 'fa-check-circle';
+
                             return `
                             <div class="flex justify-between items-center bg-green-50 p-2 rounded border border-green-200 mb-2 sku-row">
                                 <span class="font-mono text-sm font-bold text-green-700 bg-white px-2 py-1 rounded shadow-sm">${sku}</span>
-                                <span class="text-green-600 text-xs font-bold px-3 py-1.5 uppercase tracking-wide"><i class="fa-solid fa-check-circle mr-1"></i> Updated</span>
+                                <span class="text-green-600 text-xs font-bold px-3 py-1.5 uppercase tracking-wide"><i class="fa-solid ${iconType} mr-1"></i> ${statusText}</span>
                             </div>`;
                         }
                         
-                        // Normal row with SHOW button
                         return `
                         <div class="flex justify-between items-center bg-gray-50 p-2 rounded border border-gray-100 mb-2 sku-row" id="${invId}-sku-${skuIndex}">
                             <span class="font-mono text-sm font-bold text-gray-700 bg-white px-2 py-1 rounded shadow-sm">${sku}</span>
@@ -176,7 +180,6 @@
                         </div>`;
                     }).join('');
 
-                    // Render invoice if there are any barcodes (synced or unsynced)
                     if (item.barcodes.length > 0) {
                         html += `
                         <div id="${invId}" class="invoice-card bg-white p-5 rounded-lg shadow-sm border border-gray-200 flex flex-col md:flex-row gap-4">
@@ -198,7 +201,8 @@
             }
         } catch (e) {
             document.getElementById('posLoadingMsg').classList.add('hidden');
-            alert("Error fetching data: Backend is not responding! Have you run `node index.js`?");
+            alert("Error fetching data: Backend is not responding or Render Server is waking up (takes 1-2 minutes). Please try again.");
+            console.error(e);
         }
     }
 
@@ -230,14 +234,14 @@
                                     p_title: p.title,
                                     v_title: v.title,
                                     sku: v.sku,
-                                    stock: stock
+                                    stock: stock,
+                                    fullInventory: v.inventory // 👈 Other store er stock neyar jonno add kora holo
                                 });
                             }
                         });
                     });
 
                     if (matchingVariants.length > 0) {
-                        // Sort variants: Active (stock > 0) first, Sold Out (stock <= 0) last
                         matchingVariants.sort((a, b) => {
                             const aIsOut = a.stock <= 0;
                             const bIsOut = b.stock <= 0;
@@ -250,7 +254,20 @@
                             const isOut = item.stock <= 0;
                             const btnHtml = isOut 
                                 ? `<div class="text-center text-red-500 font-bold text-sm py-2 bg-red-50 rounded">SOLD OUT</div>`
-                                : `<button id="btnPos-${item.v_id}" onclick="processPosSale('${item.p_id}', '${item.v_id}', ${item.stock}, '${item.inventoryItemId}')" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 rounded text-xs transition shadow-sm"><i class="fa-solid fa-cart-arrow-down mr-1"></i> SALE (-1)</button>`;
+                                : `<button id="btnPos-${item.v_id}" onclick="processPosSale('${item.p_id}', '${item.v_id}', ${item.stock}, '${item.inventoryItemId}')" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 rounded text-xs transition shadow-sm"><i class="fa-solid fa-cart-arrow-down mr-1"></i> SALE</button>`;
+
+                            // 🟢 Onno store er stock ber korar logic 🟢
+                            let otherLocations = [];
+                            for (const [loc, qty] of Object.entries(item.fullInventory)) {
+                                if (loc !== currentUser && qty > 0) {
+                                    let locName = loc === 'admin' ? 'WH/Online' : loc.charAt(0).toUpperCase() + loc.slice(1);
+                                    otherLocations.push(`${locName} (${qty})`);
+                                }
+                            }
+                            
+                            let otherStockHtml = otherLocations.length > 0 
+                                ? `<div class="text-[10px] text-blue-600 font-bold mb-1 leading-tight">Also in: ${otherLocations.join(', ')}</div>` 
+                                : `<div class="text-[10px] text-gray-400 mb-1 leading-tight">No stock in other branches</div>`;
 
                             html += `
                             <div class="bg-white rounded-lg p-2 shadow-sm border border-gray-200 flex flex-col">
@@ -261,8 +278,13 @@
                                     </div>
                                 </div>
                                 <h4 class="text-xs font-bold text-gray-800 mb-1 line-clamp-2">${item.p_title} - ${item.v_title}</h4>
-                                <p class="text-[10px] text-gray-500 mb-2 font-mono">${item.sku}</p>
-                                <p class="text-[10px] text-gray-500 mb-2 border-t pt-1">Location: ${currentUser.toUpperCase()} | Stock: <span class="font-bold text-lg ${isOut ? 'text-red-500' : 'text-green-600'}">${item.stock}</span></p>
+                                <p class="text-[10px] text-gray-500 mb-1 font-mono">${item.sku}</p>
+                                <div class="border-t border-gray-100 pt-1 flex flex-col mb-2">
+                                    ${otherStockHtml}
+                                    <div class="text-[11px] text-gray-600 font-medium mt-1">
+                                        Loc: <span class="font-bold text-gray-800">${currentUser.toUpperCase()}</span> | Stock: <span class="font-bold text-lg ${isOut ? 'text-red-500' : 'text-green-600'}">${item.stock}</span>
+                                    </div>
+                                </div>
                                 <div class="mt-auto">${btnHtml}</div>
                             </div>`;
                         });
@@ -298,14 +320,12 @@
             const data = await res.json();
 
             if (data.status === 'success') {
-                // Sheet e save korar jonno request
                 const logReq = await fetch(`${API_URL}/log-sync`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ store: currentUser, invoiceNo: posActiveInvoice.invoiceNo, sku: posActiveInvoice.sku })
                 });
                 const logData = await logReq.json();
 
-                // Jodi Sheet e save hote error hoy, tahole screen e alert dibe
                 if (logData.status === 'error') {
                     console.error("Google Sheet Error:", logData.message);
                     alert("Shopify update hoyeche, kintu Sheet e save hoyni! Error: " + logData.message);
@@ -331,7 +351,6 @@
         const { invoiceDivId, rowId, sku } = posActiveInvoice;
         
         const row = document.getElementById(rowId);
-        // Replace SHOW button with Green Updated state
         row.innerHTML = `
             <span class="font-mono text-sm font-bold text-green-700 bg-white px-2 py-1 rounded shadow-sm">${sku}</span>
             <span class="text-green-600 text-xs font-bold px-3 py-1.5 uppercase tracking-wide"><i class="fa-solid fa-check-circle mr-1"></i> Updated</span>
@@ -344,8 +363,6 @@
         let syncedCount = parseInt(skuContainer.getAttribute('data-synced')) + 1;
         
         skuContainer.setAttribute('data-synced', syncedCount);
-        
-        // Auto-hide code removed so the invoice stays on screen
     }
 
     function closePosModal() { document.getElementById('posProductModal').classList.add('hidden'); }
