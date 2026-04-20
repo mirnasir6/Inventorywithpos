@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>POS Sync Local Test</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .loader { border: 2px solid #f3f3f3; border-top: 2px solid #000; border-radius: 50%; width: 14px; height: 14px; animation: spin 1s linear infinite; display: inline-block; vertical-align: middle; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .invoice-card { transition: all 0.3s ease; }
+    </style>
+</head>
+<body class="bg-gray-50 font-sans p-4 md:p-8">
+
+<div class="max-w-5xl mx-auto">
+    <div class="bg-blue-50 border border-blue-200 p-4 rounded-lg mb-6 flex items-center justify-between">
+        <div>
+            <p class="text-xs font-bold text-blue-800 uppercase">Test Mode Active</p>
+            <p class="text-sm text-blue-600">Simulate login to test auto-store selection logic</p>
+        </div>
+        <select id="mockLoginUser" onchange="simulateLogin()" class="border border-blue-300 rounded p-2 text-sm font-bold bg-white outline-none focus:ring-2 focus:ring-blue-400">
+            <option value="admin">Login as: Admin</option>
+            <option value="dhanmondi">Login as: Dhanmondi User</option>
+            <option value="banani">Login as: Banani User</option>
+            <option value="uttara">Login as: Uttara User</option>
+        </select>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
+        <div class="flex justify-between items-center mb-6 border-b pb-4">
+            <h2 class="text-xl font-bold text-gray-800"><i class="fa-solid fa-rotate mr-2 text-blue-500"></i> POS to Web Sync</h2>
+        </div>
+        
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+            <div>
+                <label class="block text-xs font-bold text-gray-500 mb-1">STORE LOCATION</label>
+                <select id="posStoreCode" class="w-full border border-gray-200 rounded-md p-2 text-sm bg-gray-100 outline-none text-gray-600 font-bold">
+                    <option value="ALL">ALL STORES (Admin)</option>
+                    <option value="100010004">PFF PREMIUM E-STORE</option>
+                    <option value="100010003">BANANI STORE</option>
+                    <option value="100010002">DHANMONDI STORE</option>
+                    <option value="100010006">UTTARA STORE</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-gray-500 mb-1">FROM DATE</label>
+                <input type="date" id="posFromDate" class="w-full border border-gray-200 rounded-md p-2 text-sm bg-gray-50 outline-none">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-gray-500 mb-1">TO DATE</label>
+                <input type="date" id="posEndDate" class="w-full border border-gray-200 rounded-md p-2 text-sm bg-gray-50 outline-none">
+            </div>
+            <div>
+                <button onclick="fetchPosSalesData()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-md transition shadow-md text-sm">
+                    <i class="fa-solid fa-cloud-arrow-down mr-1"></i> Get Report
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="posLoadingMsg" class="hidden text-center py-10">
+        <div class="loader mb-2"></div>
+        <p class="text-gray-500 font-semibold text-sm">Fetching Data...</p>
+    </div>
+
+    <div id="posInvoiceContainer" class="grid grid-cols-1 gap-4 pb-20"></div>
+</div>
+
+<div id="posProductModal" class="fixed inset-0 z-50 bg-black bg-opacity-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+        <div class="p-4 border-b flex justify-between items-center bg-gray-50">
+            <h3 class="font-bold text-lg text-gray-800">Products for SKU: <span id="posModalSkuTitle" class="text-blue-600"></span></h3>
+            <button onclick="closePosModal()" class="text-gray-400 hover:text-red-500"><i class="fa-solid fa-xmark fa-lg"></i></button>
+        </div>
+        <div id="posModalProducts" class="p-4 overflow-y-auto grid grid-cols-2 md:grid-cols-4 gap-4 bg-gray-100"></div>
+    </div>
+</div>
+
+<div id="imagePreviewModal" class="fixed inset-0 z-[100] bg-black bg-opacity-90 hidden flex items-center justify-center p-4 backdrop-blur-sm transition-opacity opacity-0" onclick="closeImagePreview(event)">
+    <button onclick="closeImagePreview(event, true)" class="absolute top-5 right-5 text-white hover:text-red-500 bg-gray-800 rounded-full w-10 h-10 flex items-center justify-center transition-colors z-[110]">
+        <i class="fa-solid fa-xmark text-xl"></i>
+    </button>
+    <div class="relative max-w-4xl w-full max-h-[90vh] flex flex-col items-center justify-center" onclick="event.stopPropagation()">
+        <img id="previewImage" src="" class="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl">
+        <h3 id="previewTitle" class="text-white mt-4 text-lg font-medium text-center px-4"></h3>
+    </div>
+</div>
+
+<script>
+    const API_URL = "http://localhost:3000/api";
+    let currentUser = 'admin'; 
+    let posSyncedMemory = [];
+    let posActiveInvoice = null;
+
+    const POS_STORE_MAP = {
+        'admin': '100010004', 
+        'dhanmondi': '100010002',
+        'banani': '100010003',
+        'uttara': '100010006'
+    };
+
+    window.onload = function() {
+        let today = new Date().toISOString().split('T')[0];
+        document.getElementById('posFromDate').value = today;
+        document.getElementById('posEndDate').value = today;
+        simulateLogin();
+    };
+
+    function simulateLogin() {
+        currentUser = document.getElementById('mockLoginUser').value;
+        const mappedStore = POS_STORE_MAP[currentUser];
+        const storeSelect = document.getElementById('posStoreCode');
+        
+        storeSelect.value = mappedStore;
+        storeSelect.disabled = (currentUser !== 'admin'); 
+    }
+
+    function posFormatDate(d) {
+        const date = new Date(d);
+        const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        return `${String(date.getDate()).padStart(2, '0')}-${months[date.getMonth()]}-${date.getFullYear()}`;
+    }
+
+    async function fetchPosSalesData() {
+        document.getElementById('posLoadingMsg').classList.remove('hidden');
+        document.getElementById('posInvoiceContainer').innerHTML = '';
+
+        try {
+            // 1. Get Synced History
+            const syncRes = await fetch(`${API_URL}/get-synced-data`, { method: 'POST', headers: { 'Content-Type': 'application/json' }});
+            const syncData = await syncRes.json();
+            posSyncedMemory = syncData.syncedItems || [];
+
+            // 2. Fetch POS Data
+            const payload = {
+                storeCode: document.getElementById('posStoreCode').value,
+                fromDate: posFormatDate(document.getElementById('posFromDate').value),
+                endDate: posFormatDate(document.getElementById('posEndDate').value)
+            };
+            const response = await fetch(`${API_URL}/pos-sales`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+            });
+            const resData = await response.json();
+            
+            document.getElementById('posLoadingMsg').classList.add('hidden');
+
+            if (resData.status === 'success' && resData.data.length > 0) {
+                let html = "";
+                resData.data.forEach((item, index) => {
+                    const invId = `invoice-${index}`;
+                    
+                    let skuRows = item.barcodes.map((sku, skuIndex) => {
+                        // POS থেকে আসা ইনভয়েসের সামনের 0 মুছে ফেলা হচ্ছে
+                        const posInv = String(item.invoiceNo).replace(/^0+/, '');
+                        const uniqueKey = `${posInv}_${sku}`;
+                        const isSynced = posSyncedMemory.includes(uniqueKey);
+                        
+                        if (isSynced) {
+                            // Render as Updated (Green) immediately if found in Sheet memory
+                            return `
+                            <div class="flex justify-between items-center bg-green-50 p-2 rounded border border-green-200 mb-2 sku-row">
+                                <span class="font-mono text-sm font-bold text-green-700 bg-white px-2 py-1 rounded shadow-sm">${sku}</span>
+                                <span class="text-green-600 text-xs font-bold px-3 py-1.5 uppercase tracking-wide"><i class="fa-solid fa-check-circle mr-1"></i> Updated</span>
+                            </div>`;
+                        }
+                        
+                        // Normal row with SHOW button
+                        return `
+                        <div class="flex justify-between items-center bg-gray-50 p-2 rounded border border-gray-100 mb-2 sku-row" id="${invId}-sku-${skuIndex}">
+                            <span class="font-mono text-sm font-bold text-gray-700 bg-white px-2 py-1 rounded shadow-sm">${sku}</span>
+                            <button onclick="showPosProducts('${sku}', '${invId}', '${invId}-sku-${skuIndex}', '${item.invoiceNo}')" class="bg-black hover:bg-gray-800 text-white text-xs font-bold px-3 py-1.5 rounded transition">
+                                <i class="fa-regular fa-eye mr-1"></i> SHOW
+                            </button>
+                        </div>`;
+                    }).join('');
+
+                    // Render invoice if there are any barcodes (synced or unsynced)
+                    if (item.barcodes.length > 0) {
+                        html += `
+                        <div id="${invId}" class="invoice-card bg-white p-5 rounded-lg shadow-sm border border-gray-200 flex flex-col md:flex-row gap-4">
+                            <div class="md:w-1/4">
+                                <div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Invoice No</div>
+                                <div class="text-lg font-bold text-red-600">${item.invoiceNo}</div>
+                            </div>
+                            <div class="md:w-3/4 w-full">
+                                <div class="invoice-skus" data-total="${item.barcodes.length}" data-synced="0">
+                                    ${skuRows}
+                                </div>
+                            </div>
+                        </div>`;
+                    }
+                });
+                document.getElementById('posInvoiceContainer').innerHTML = html || '<div class="text-center py-10 text-gray-500">No data found.</div>';
+            } else {
+                document.getElementById('posInvoiceContainer').innerHTML = '<div class="text-center py-10 text-gray-500">No POS sales data found for this date.</div>';
+            }
+        } catch (e) {
+            document.getElementById('posLoadingMsg').classList.add('hidden');
+            alert("Error fetching data: Backend is not responding! Have you run `node index.js`?");
+        }
+    }
+
+    async function showPosProducts(sku, invoiceDivId, rowId, invoiceNo) {
+        posActiveInvoice = { invoiceDivId, rowId, invoiceNo, sku };
+        document.getElementById('posModalSkuTitle').innerText = sku;
+        const container = document.getElementById('posModalProducts');
+        container.innerHTML = '<div class="col-span-4 text-center py-10"><div class="loader mb-2"></div><p class="text-xs">Fetching Real Shopify Data...</p></div>';
+        document.getElementById('posProductModal').classList.remove('hidden');
+
+        try {
+            const response = await fetch(`${API_URL}/search-shopify`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sku: sku })
+            });
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                if (data.products.length > 0) {
+                    let matchingVariants = [];
+                    data.products.forEach(p => {
+                        p.variants.forEach(v => {
+                            if (v.sku && v.sku.includes(sku)) {
+                                let stock = currentUser === 'admin' ? (v.inventory.admin || 0) : (v.inventory[currentUser] || 0);
+                                matchingVariants.push({
+                                    p_id: p.id,
+                                    v_id: v.id,
+                                    inventoryItemId: v.inventoryItemId,
+                                    image: p.image,
+                                    p_title: p.title,
+                                    v_title: v.title,
+                                    sku: v.sku,
+                                    stock: stock
+                                });
+                            }
+                        });
+                    });
+
+                    if (matchingVariants.length > 0) {
+                        // Sort variants: Active (stock > 0) first, Sold Out (stock <= 0) last
+                        matchingVariants.sort((a, b) => {
+                            const aIsOut = a.stock <= 0;
+                            const bIsOut = b.stock <= 0;
+                            if (aIsOut === bIsOut) return 0;
+                            return aIsOut ? 1 : -1;
+                        });
+
+                        let html = '';
+                        matchingVariants.forEach(item => {
+                            const isOut = item.stock <= 0;
+                            const btnHtml = isOut 
+                                ? `<div class="text-center text-red-500 font-bold text-sm py-2 bg-red-50 rounded">SOLD OUT</div>`
+                                : `<button id="btnPos-${item.v_id}" onclick="processPosSale('${item.p_id}', '${item.v_id}', ${item.stock}, '${item.inventoryItemId}')" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 rounded text-xs transition shadow-sm"><i class="fa-solid fa-cart-arrow-down mr-1"></i> SALE (-1)</button>`;
+
+                            html += `
+                            <div class="bg-white rounded-lg p-2 shadow-sm border border-gray-200 flex flex-col">
+                                <div class="w-full relative overflow-hidden rounded mb-2 cursor-pointer group" style="aspect-ratio: 2/3;" onclick="openImagePreview('${item.image}', '${item.p_title.replace(/'/g, "\\'")}')">
+                                    <img src="${item.image}" class="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" onerror="this.src='https://via.placeholder.com/300x450?text=No+Image'">
+                                    <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all flex items-center justify-center">
+                                        <i class="fa-solid fa-expand text-white opacity-0 group-hover:opacity-100 text-3xl drop-shadow-md"></i>
+                                    </div>
+                                </div>
+                                <h4 class="text-xs font-bold text-gray-800 mb-1 line-clamp-2">${item.p_title} - ${item.v_title}</h4>
+                                <p class="text-[10px] text-gray-500 mb-2 font-mono">${item.sku}</p>
+                                <p class="text-[10px] text-gray-500 mb-2 border-t pt-1">Location: ${currentUser.toUpperCase()} | Stock: <span class="font-bold text-lg ${isOut ? 'text-red-500' : 'text-green-600'}">${item.stock}</span></p>
+                                <div class="mt-auto">${btnHtml}</div>
+                            </div>`;
+                        });
+                        container.innerHTML = html;
+                    } else {
+                        container.innerHTML = '<p class="col-span-4 text-center text-red-500">Variant Match Not Found for this SKU.</p>';
+                    }
+                } else {
+                    container.innerHTML = '<p class="col-span-4 text-center text-red-500">Product Not Found in Shopify (0 Results).</p>';
+                }
+            } else {
+                container.innerHTML = `<p class="col-span-4 text-center text-red-500 font-bold">API Error: ${data.message}</p>`;
+            }
+        } catch(e) {
+            container.innerHTML = '<p class="col-span-4 text-center text-red-500">Failed to load API data. Check terminal for errors.</p>';
+        }
+    }
+
+    async function processPosSale(productId, variantId, currentStock, inventoryItemId) {
+        const btn = document.getElementById(`btnPos-${variantId}`);
+        btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> Processing...`;
+        btn.disabled = true;
+        btn.classList.replace('bg-green-600', 'bg-gray-400');
+
+        try {
+            const payload = {
+                variantId: variantId, inventoryItemId: inventoryItemId, store: currentUser, currentQty: currentStock
+            };
+
+            const res = await fetch(`${API_URL}/update-inventory`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+
+            if (data.status === 'success') {
+                // Sheet e save korar jonno request
+                const logReq = await fetch(`${API_URL}/log-sync`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ store: currentUser, invoiceNo: posActiveInvoice.invoiceNo, sku: posActiveInvoice.sku })
+                });
+                const logData = await logReq.json();
+
+                // Jodi Sheet e save hote error hoy, tahole screen e alert dibe
+                if (logData.status === 'error') {
+                    console.error("Google Sheet Error:", logData.message);
+                    alert("Shopify update hoyeche, kintu Sheet e save hoyni! Error: " + logData.message);
+                }
+
+                btn.innerHTML = `<i class="fa-solid fa-check"></i> DONE`;
+                btn.classList.replace('bg-gray-400', 'bg-black');
+                
+                setTimeout(() => {
+                    closePosModal();
+                    markPosSkuAsSynced();
+                }, 800);
+            } else { throw new Error("Update Failed"); }
+        } catch (e) {
+            btn.innerHTML = `Failed! Retry`;
+            btn.disabled = false;
+            btn.classList.replace('bg-gray-400', 'bg-red-600');
+        }
+    }
+
+    function markPosSkuAsSynced() {
+        if(!posActiveInvoice) return;
+        const { invoiceDivId, rowId, sku } = posActiveInvoice;
+        
+        const row = document.getElementById(rowId);
+        // Replace SHOW button with Green Updated state
+        row.innerHTML = `
+            <span class="font-mono text-sm font-bold text-green-700 bg-white px-2 py-1 rounded shadow-sm">${sku}</span>
+            <span class="text-green-600 text-xs font-bold px-3 py-1.5 uppercase tracking-wide"><i class="fa-solid fa-check-circle mr-1"></i> Updated</span>
+        `;
+        row.classList.remove('bg-gray-50', 'border-gray-100');
+        row.classList.add('bg-green-50', 'border-green-200');
+
+        const invoiceDiv = document.getElementById(invoiceDivId);
+        const skuContainer = invoiceDiv.querySelector('.invoice-skus');
+        let syncedCount = parseInt(skuContainer.getAttribute('data-synced')) + 1;
+        
+        skuContainer.setAttribute('data-synced', syncedCount);
+        
+        // Auto-hide code removed so the invoice stays on screen
+    }
+
+    function closePosModal() { document.getElementById('posProductModal').classList.add('hidden'); }
+
+    function openImagePreview(src, title) {
+        const m = document.getElementById('imagePreviewModal');
+        document.getElementById('previewImage').src = src;
+        document.getElementById('previewTitle').innerText = title;
+        m.classList.remove('hidden');
+        setTimeout(() => m.classList.remove('opacity-0'), 10);
+    }
+
+    function closeImagePreview(e, force = false) {
+        if (force || (e && e.target.id === 'imagePreviewModal')) {
+            const m = document.getElementById('imagePreviewModal');
+            m.classList.add('opacity-0');
+            setTimeout(() => m.classList.add('hidden'), 300);
+        }
+    }
+</script>
+</body>
+</html>
