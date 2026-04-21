@@ -31,8 +31,7 @@
             <div>
                 <label class="block text-xs font-bold text-gray-500 mb-1">STORE LOCATION</label>
                 <select id="posStoreCode" class="w-full border border-gray-200 rounded-md p-2 text-sm bg-gray-100 outline-none text-gray-600 font-bold">
-                    <option value="ALL">ALL STORES (Admin)</option>
-                    <option value="100010004">PFF PREMIUM E-STORE</option>
+                    <option value="">Choose Store</option>
                     <option value="100010003">BANANI STORE</option>
                     <option value="100010002">DHANMONDI STORE</option>
                     <option value="100010006">UTTARA STORE</option>
@@ -95,10 +94,16 @@
     let posActiveInvoice = null;
 
     const POS_STORE_MAP = {
-        'admin': '100010004', 
+        'admin': '', 
         'dhanmondi': '100010002',
         'banani': '100010003',
         'uttara': '100010006'
+    };
+
+    const REVERSE_STORE_MAP = {
+        '100010002': 'dhanmondi',
+        '100010003': 'banani',
+        '100010006': 'uttara'
     };
 
     window.onload = function() {
@@ -117,6 +122,12 @@
         storeSelect.disabled = (currentUser !== 'admin'); 
     }
 
+    // Helper function to get the actual store being operated on
+    function getOperatingStore() {
+        const selectedCode = document.getElementById('posStoreCode').value;
+        return currentUser === 'admin' ? REVERSE_STORE_MAP[selectedCode] : currentUser;
+    }
+
     function posFormatDate(d) {
         const date = new Date(d);
         const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -124,6 +135,12 @@
     }
 
     async function fetchPosSalesData() {
+        const storeCode = document.getElementById('posStoreCode').value;
+        if (!storeCode) {
+            alert("Please choose a store location first.");
+            return;
+        }
+
         document.getElementById('posLoadingMsg').classList.remove('hidden');
         document.getElementById('posInvoiceContainer').innerHTML = '';
 
@@ -225,7 +242,8 @@
                     data.products.forEach(p => {
                         p.variants.forEach(v => {
                             if (v.sku && v.sku.includes(sku)) {
-                                let stock = currentUser === 'admin' ? (v.inventory.admin || 0) : (v.inventory[currentUser] || 0);
+                                const operatingStore = getOperatingStore();
+                                let stock = v.inventory[operatingStore] || 0;
                                 matchingVariants.push({
                                     p_id: p.id,
                                     v_id: v.id,
@@ -258,9 +276,10 @@
 
                             // 🟢 Onno store er stock ber korar logic 🟢
                             let otherLocations = [];
+                            const operatingStore = getOperatingStore();
                             for (const [loc, qty] of Object.entries(item.fullInventory)) {
-                                if (loc !== currentUser && qty > 0) {
-                                    let locName = loc === 'admin' ? 'WH/Online' : loc.charAt(0).toUpperCase() + loc.slice(1);
+                                if (loc !== operatingStore && qty > 0) {
+                                    let locName = loc === 'admin' ? 'Admin' : loc.charAt(0).toUpperCase() + loc.slice(1);
                                     otherLocations.push(`${locName} (${qty})`);
                                 }
                             }
@@ -282,7 +301,7 @@
                                 <div class="border-t border-gray-100 pt-1 flex flex-col mb-2">
                                     ${otherStockHtml}
                                     <div class="text-[11px] text-gray-600 font-medium mt-1">
-                                        Loc: <span class="font-bold text-gray-800">${currentUser.toUpperCase()}</span> | Stock: <span class="font-bold text-lg ${isOut ? 'text-red-500' : 'text-green-600'}">${item.stock}</span>
+                                        Loc: <span class="font-bold text-gray-800">${operatingStore.toUpperCase()}</span> | Stock: <span class="font-bold text-lg ${isOut ? 'text-red-500' : 'text-green-600'}">${item.stock}</span>
                                     </div>
                                 </div>
                                 <div class="mt-auto">${btnHtml}</div>
@@ -310,8 +329,9 @@
         btn.classList.replace('bg-green-600', 'bg-gray-400');
 
         try {
+            const operatingStore = getOperatingStore();
             const payload = {
-                variantId: variantId, inventoryItemId: inventoryItemId, store: currentUser, currentQty: currentStock
+                variantId: variantId, inventoryItemId: inventoryItemId, store: operatingStore, currentQty: currentStock
             };
 
             const res = await fetch(`${API_URL}/update-inventory`, {
@@ -320,9 +340,10 @@
             const data = await res.json();
 
             if (data.status === 'success') {
+                const operatingStore = getOperatingStore();
                 const logReq = await fetch(`${API_URL}/log-sync`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ store: currentUser, invoiceNo: posActiveInvoice.invoiceNo, sku: posActiveInvoice.sku })
+                    body: JSON.stringify({ store: operatingStore, invoiceNo: posActiveInvoice.invoiceNo, sku: posActiveInvoice.sku })
                 });
                 const logData = await logReq.json();
 
